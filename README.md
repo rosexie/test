@@ -17,3 +17,4 @@ uvicorn web.app:app --host 0.0.0.0 --port 8000
 - `ORACLE_PASSWORD`
 - `ORACLE_DSN`
 - `COLLECT_INTERVAL_SECONDS`
+- `APP_HEARTBEAT_PERSIST_SECONDS`（默认300秒，控制长跑任务状态的最小持久化间隔，降低频繁更新）

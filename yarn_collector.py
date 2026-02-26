@@ -29,6 +29,7 @@ class Settings:
     oracle_password: str = os.getenv("ORACLE_PASSWORD", "BIGDATA_VISION")
     oracle_dsn: str = os.getenv("ORACLE_DSN", "10.195.227.115:1526/VISION")
     collect_interval_seconds: int = int(os.getenv("COLLECT_INTERVAL_SECONDS", "60"))
+    app_heartbeat_persist_seconds: int = int(os.getenv("APP_HEARTBEAT_PERSIST_SECONDS", "300"))
 
     @property
     def proxies(self) -> Dict[str, str]:
@@ -274,7 +275,7 @@ class YarnOracleCollector:
                              :allocated_vcores AS allocated_vcores, :reserved_mb AS reserved_mb,
                              :reserved_vcores AS reserved_vcores, :progress AS progress,
                              :elapsed_time_ms AS elapsed_time_ms, :result_tag AS result_tag,
-                             :is_finished AS is_finished
+                             :is_finished AS is_finished, :heartbeat_seconds AS heartbeat_seconds
                       FROM dual
                     ) s
                     ON (t.APP_ID = s.app_id)
@@ -295,6 +296,19 @@ class YarnOracleCollector:
                       t.ELAPSED_TIME_MS = NVL(s.elapsed_time_ms, t.ELAPSED_TIME_MS),
                       t.FINISHED_TIME = CASE WHEN s.is_finished = 1 THEN s.snap_time ELSE t.FINISHED_TIME END,
                       t.FINISH_RECORDED = CASE WHEN s.is_finished = 1 THEN 1 ELSE t.FINISH_RECORDED END
+                    WHERE
+                      s.is_finished = 1
+                      OR NVL(t.FINISH_RECORDED, 0) = 0
+                      OR NVL(t.LAST_STATE, ''~'') != NVL(s.state, ''~'')
+                      OR NVL(t.FINAL_STATUS, ''~'') != NVL(s.final_status, ''~'')
+                      OR NVL(t.MAX_RUNNING_CONTAINERS, 0) < NVL(s.running_containers, 0)
+                      OR NVL(t.MAX_ALLOCATED_MB, 0) < NVL(s.allocated_mb, 0)
+                      OR NVL(t.MAX_ALLOCATED_VCORES, 0) < NVL(s.allocated_vcores, 0)
+                      OR NVL(t.MAX_RESERVED_MB, 0) < NVL(s.reserved_mb, 0)
+                      OR NVL(t.MAX_RESERVED_VCORES, 0) < NVL(s.reserved_vcores, 0)
+                      OR NVL(t.MAX_PROGRESS, 0) < NVL(s.progress, 0)
+                      OR NVL(t.LAST_SEEN_TIME, s.snap_time - NUMTODSINTERVAL(s.heartbeat_seconds + 1, 'SECOND'))
+                         <= s.snap_time - NUMTODSINTERVAL(s.heartbeat_seconds, 'SECOND')
                     WHEN NOT MATCHED THEN INSERT (
                       APP_ID, APP_NAME, USER_NAME, QUEUE_NAME,
                       FIRST_SEEN_TIME, LAST_SEEN_TIME, LAST_STATE, FINAL_STATUS, RESULT_TAG,
@@ -327,6 +341,7 @@ class YarnOracleCollector:
                         "elapsed_time_ms": app.get("elapsedTime"),
                         "result_tag": self._result_tag(state, final_status),
                         "is_finished": 1 if is_finished else 0,
+                        "heartbeat_seconds": self.settings.app_heartbeat_persist_seconds,
                     },
                 )
         conn.commit()
