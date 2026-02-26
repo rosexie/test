@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>YARN 资源看板</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+  <header><h1>YARN 资源使用看板</h1></header>
+  <main class="grid">
+    <section class="card">
+      <h2>队列统计（日/周最大最小P95）</h2>
+      <div class="toolbar"><button data-period="day">按天</button><button data-period="week">按周</button></div>
+      <div id="queueStats" class="chart"></div>
+    </section>
+    <section class="card">
+      <h2>当日集群/队列资源曲线</h2>
+      <div id="todayUsage" class="chart"></div>
+    </section>
+    <section class="card full">
+      <h2>任务资源与结果（按队列）</h2>
+      <div id="appTable"></div>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
