@@ -5,6 +5,14 @@ import org.apache.spark.sql.functions.col
 
 object PipelineModules {
 
+  /**
+    * 兼容 Yarn/Spark 以 `--class com.example.metrics.PipelineModules` 启动。
+    * 统一转发到 `PipelineMain`，避免因为入口类配置差异导致 ClassNotFound 或无 main 方法问题。
+    */
+  def main(args: Array[String]): Unit = {
+    PipelineMain.main(args)
+  }
+
   def readData(spark: SparkSession, ctx: ModuleCtx): DataFrame = {
     import spark.implicits._
     Seq(
