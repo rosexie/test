@@ -8,10 +8,10 @@ from fastapi import APIRouter, Query
 from web.db import get_conn
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
+legacy_router = APIRouter(prefix="/api", tags=["dashboard-legacy"])
 
 
-@router.get("/queue/stats")
-def queue_stats(period: str = Query("day", pattern="^(day|week)$")) -> List[Dict[str, Any]]:
+def _queue_stats(period: str) -> List[Dict[str, Any]]:
     trunc_expr = "TRUNC(SNAP_TIME)" if period == "day" else "TRUNC(SNAP_TIME, 'IW')"
     sql = f"""
     SELECT {trunc_expr} AS bucket_time,
@@ -38,11 +38,17 @@ def queue_stats(period: str = Query("day", pattern="^(day|week)$")) -> List[Dict
         ]
 
 
-@router.get("/queue/overview")
-def queue_overview(
-    period: str = Query("day", pattern="^(day|week)$"),
-    top_n: int = Query(8, ge=3, le=20),
-) -> List[Dict[str, Any]]:
+@router.get("/queue/stats")
+def queue_stats(period: str = Query("day", pattern="^(day|week)$")) -> List[Dict[str, Any]]:
+    return _queue_stats(period)
+
+
+@legacy_router.get("/queue/stats")
+def queue_stats_legacy(period: str = Query("day", pattern="^(day|week)$")) -> List[Dict[str, Any]]:
+    return _queue_stats(period)
+
+
+def _queue_overview(period: str, top_n: int) -> List[Dict[str, Any]]:
     lookback_days = 7 if period == "day" else 56
     sql = """
     SELECT *
@@ -73,8 +79,12 @@ def queue_overview(
         ]
 
 
-@router.get("/usage/today")
-def today_usage() -> Dict[str, Any]:
+@router.get("/queue/overview")
+def queue_overview(period: str = Query("day", pattern="^(day|week)$"), top_n: int = Query(8, ge=3, le=20)) -> List[Dict[str, Any]]:
+    return _queue_overview(period, top_n)
+
+
+def _today_usage() -> Dict[str, Any]:
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -104,8 +114,17 @@ def today_usage() -> Dict[str, Any]:
     return {"cluster": cluster, "queues": queue_series}
 
 
-@router.get("/apps/daily-summary")
-def apps_daily_summary(days: int = Query(14, ge=3, le=90)) -> List[Dict[str, Any]]:
+@router.get("/usage/today")
+def today_usage() -> Dict[str, Any]:
+    return _today_usage()
+
+
+@legacy_router.get("/today/usage")
+def today_usage_legacy() -> Dict[str, Any]:
+    return _today_usage()
+
+
+def _apps_daily_summary(days: int) -> List[Dict[str, Any]]:
     sql = """
     SELECT TRUNC(FIRST_SEEN_TIME) AS bucket_day,
            COUNT(*) AS total_apps,
@@ -135,8 +154,12 @@ def apps_daily_summary(days: int = Query(14, ge=3, le=90)) -> List[Dict[str, Any
         ]
 
 
-@router.get("/apps/queue-summary")
-def apps_queue_summary(days: int = Query(7, ge=1, le=30), top_n: int = Query(12, ge=5, le=30)) -> List[Dict[str, Any]]:
+@router.get("/apps/daily-summary")
+def apps_daily_summary(days: int = Query(14, ge=3, le=90)) -> List[Dict[str, Any]]:
+    return _apps_daily_summary(days)
+
+
+def _apps_queue_summary(days: int, top_n: int) -> List[Dict[str, Any]]:
     sql = """
     SELECT *
       FROM (
@@ -170,12 +193,12 @@ def apps_queue_summary(days: int = Query(7, ge=1, le=30), top_n: int = Query(12,
         ]
 
 
-@router.get("/apps/recent")
-def apps_recent(
-    queue: str | None = None,
-    result_tag: str | None = Query(None, pattern="^(success|failed|running)$"),
-    day: date | None = None,
-) -> List[Dict[str, Any]]:
+@router.get("/apps/queue-summary")
+def apps_queue_summary(days: int = Query(7, ge=1, le=30), top_n: int = Query(12, ge=5, le=30)) -> List[Dict[str, Any]]:
+    return _apps_queue_summary(days, top_n)
+
+
+def _apps_recent(queue: str | None, result_tag: str | None, day: date | None) -> List[Dict[str, Any]]:
     filters = ["1=1"]
     params: Dict[str, Any] = {}
     if queue:
@@ -216,3 +239,21 @@ def apps_recent(
             }
             for r in cur.fetchall()
         ]
+
+
+@router.get("/apps/recent")
+def apps_recent(
+    queue: str | None = None,
+    result_tag: str | None = Query(None, pattern="^(success|failed|running)$"),
+    day: date | None = None,
+) -> List[Dict[str, Any]]:
+    return _apps_recent(queue, result_tag, day)
+
+
+@legacy_router.get("/apps/by-queue")
+def apps_by_queue_legacy(
+    queue: str | None = None,
+    result_tag: str | None = Query(None, pattern="^(success|failed|running)$"),
+    day: date | None = None,
+) -> List[Dict[str, Any]]:
+    return _apps_recent(queue, result_tag, day)

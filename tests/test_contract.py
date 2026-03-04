@@ -23,6 +23,12 @@ class DashboardContractTest(unittest.TestCase):
         ]:
             self.assertIn(f'@router.get("{path}")', content)
 
+    def test_legacy_router_contract(self):
+        content = Path('web/api/dashboard.py').read_text(encoding='utf-8')
+        self.assertIn('APIRouter(prefix="/api"', content)
+        for path in ['/queue/stats', '/today/usage', '/apps/by-queue']:
+            self.assertIn(f'@legacy_router.get("{path}")', content)
+
     def test_frontend_uses_namespaced_api(self):
         content = Path('web/static/app.js').read_text(encoding='utf-8')
         self.assertIn('/api/dashboard/queue/stats', content)

@@ -27,6 +27,11 @@ python -m unittest discover -s tests -p 'test_*.py' -v
 
 > 后续新增页面时，优先在 `web/pages.py` 注册页面，再按页面域在 `web/api/` 下新增 router。
 
+- 兼容旧版接口（避免已有页面/脚本404）：
+  - `GET /api/queue/stats`
+  - `GET /api/today/usage`
+  - `GET /api/apps/by-queue`
+
 ### 环境变量
 - `YARN_BASE_URL`
 - `SOCKS5_PROXY`
