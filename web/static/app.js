@@ -101,7 +101,10 @@ async function loadQueueStats() {
 }
 
 async function loadQueueOverview() {
-  const rows = await getJSON(`/api/dashboard/queue/overview?period=${state.period}&top_n=${state.topN}`);
+  const rows = await getJSONWithFallback([
+    `/api/dashboard/queue/overview?period=${state.period}&top_n=${state.topN}`,
+    `/api/queue/overview?period=${state.period}&top_n=${state.topN}`,
+  ]);
   if (!rows.length) {
     queueOverviewChart.clear();
     return [];
@@ -146,7 +149,10 @@ async function loadTodayUsage(preferredTopQueues = []) {
 }
 
 async function loadDailyAppsSummary() {
-  const rows = await getJSON(`/api/dashboard/apps/daily-summary?days=${state.days}`);
+  const rows = await getJSONWithFallback([
+    `/api/dashboard/apps/daily-summary?days=${state.days}`,
+    `/api/apps/daily-summary?days=${state.days}`,
+  ]);
   if (!rows.length) {
     dailyAppsChart.clear();
     return rows;
@@ -254,17 +260,29 @@ function bindControls() {
 }
 
 async function refreshDashboard() {
+  const [statsRes, overviewRes, dailyRes, queueSummaryRes, appsRes] = await Promise.allSettled([
+    loadQueueStats(),
+    loadQueueOverview(),
+    loadDailyAppsSummary(),
+    loadQueueAppSummary(),
+    loadApps(),
+  ]);
+
+  const topQueues = statsRes.status === 'fulfilled' ? statsRes.value.topQueues : [];
+  const queueOverviewRows = overviewRes.status === 'fulfilled' ? overviewRes.value : [];
+  const dailySummary = dailyRes.status === 'fulfilled' ? dailyRes.value : [];
+
+  if (statsRes.status === 'rejected') showEmpty('queueStats', `加载失败: ${statsRes.reason.message}`);
+  if (overviewRes.status === 'rejected') showEmpty('queueOverview', `加载失败: ${overviewRes.reason.message}`);
+  if (dailyRes.status === 'rejected') showEmpty('dailyApps', `加载失败: ${dailyRes.reason.message}`);
+  if (queueSummaryRes.status === 'rejected') showEmpty('queueAppSummary', `加载失败: ${queueSummaryRes.reason.message}`);
+  if (appsRes.status === 'rejected') showEmpty('appTable', `加载失败: ${appsRes.reason.message}`);
+
   try {
-    const [{ topQueues }, queueOverviewRows, dailySummary] = await Promise.all([
-      loadQueueStats(),
-      loadQueueOverview(),
-      loadDailyAppsSummary(),
-      loadQueueAppSummary(),
-      loadApps(),
-    ]);
     const todayUsage = await loadTodayUsage(topQueues);
     renderSummaryCards(todayUsage, dailySummary, queueOverviewRows);
   } catch (err) {
+    showEmpty('todayUsage', `加载失败: ${err.message}`);
     showEmpty('summaryCards', `加载失败: ${err.message}`);
   }
 }

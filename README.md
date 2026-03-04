@@ -29,7 +29,9 @@ python -m unittest discover -s tests -p 'test_*.py' -v
 
 - 兼容旧版接口（避免已有页面/脚本404）：
   - `GET /api/queue/stats`
+  - `GET /api/queue/overview`
   - `GET /api/today/usage`
+  - `GET /api/apps/daily-summary`
   - `GET /api/apps/by-queue`
 
 ### 环境变量

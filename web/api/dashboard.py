@@ -84,6 +84,11 @@ def queue_overview(period: str = Query("day", pattern="^(day|week)$"), top_n: in
     return _queue_overview(period, top_n)
 
 
+@legacy_router.get("/queue/overview")
+def queue_overview_legacy(period: str = Query("day", pattern="^(day|week)$"), top_n: int = Query(8, ge=3, le=20)) -> List[Dict[str, Any]]:
+    return _queue_overview(period, top_n)
+
+
 def _today_usage() -> Dict[str, Any]:
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
@@ -156,6 +161,11 @@ def _apps_daily_summary(days: int) -> List[Dict[str, Any]]:
 
 @router.get("/apps/daily-summary")
 def apps_daily_summary(days: int = Query(14, ge=3, le=90)) -> List[Dict[str, Any]]:
+    return _apps_daily_summary(days)
+
+
+@legacy_router.get("/apps/daily-summary")
+def apps_daily_summary_legacy(days: int = Query(14, ge=3, le=90)) -> List[Dict[str, Any]]:
     return _apps_daily_summary(days)
 
 
