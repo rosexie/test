@@ -26,7 +26,7 @@ class DashboardContractTest(unittest.TestCase):
     def test_legacy_router_contract(self):
         content = Path('web/api/dashboard.py').read_text(encoding='utf-8')
         self.assertIn('APIRouter(prefix="/api"', content)
-        for path in ['/queue/stats', '/queue/overview', '/today/usage', '/apps/daily-summary', '/apps/by-queue']:
+        for path in ['/queue/stats', '/queue/overview', '/today/usage', '/apps/daily-summary', '/apps/by-queue', '/apps/recent']:
             self.assertIn(f'@legacy_router.get("{path}")', content)
 
     def test_frontend_uses_namespaced_api(self):
@@ -43,6 +43,8 @@ class DashboardContractTest(unittest.TestCase):
         self.assertIn('/api/today/usage', content)
         self.assertIn('/api/apps/daily-summary', content)
         self.assertIn('/api/apps/by-queue', content)
+        self.assertIn('/api/apps/recent', content)
+        self.assertIn("getElementById('refreshBtn').addEventListener('click', refreshDashboard)", content)
         self.assertIn('Promise.allSettled', content)
 
 

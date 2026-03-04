@@ -33,6 +33,7 @@ python -m unittest discover -s tests -p 'test_*.py' -v
   - `GET /api/today/usage`
   - `GET /api/apps/daily-summary`
   - `GET /api/apps/by-queue`
+  - `GET /api/apps/recent`
 
 ### 环境变量
 - `YARN_BASE_URL`

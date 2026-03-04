@@ -261,7 +261,12 @@ def apps_recent(
 
 
 @legacy_router.get("/apps/by-queue")
-def apps_by_queue_legacy(
+def apps_by_queue_legacy(days: int = Query(7, ge=1, le=30), top_n: int = Query(12, ge=5, le=30)) -> List[Dict[str, Any]]:
+    return _apps_queue_summary(days, top_n)
+
+
+@legacy_router.get("/apps/recent")
+def apps_recent_legacy(
     queue: str | None = None,
     result_tag: str | None = Query(None, pattern="^(success|failed|running)$"),
     day: date | None = None,

@@ -215,7 +215,7 @@ function renderSummaryCards(todayUsage, dailySummary, queueOverviewRows) {
 }
 
 async function loadApps() {
-  const rows = await getJSONWithFallback(['/api/dashboard/apps/recent', '/api/apps/by-queue']);
+  const rows = await getJSONWithFallback(['/api/dashboard/apps/recent', '/api/apps/recent']);
   if (!rows.length) return showEmpty('appTable', '暂无任务明细数据');
 
   const html = ['<table><thead><tr><th>app_id</th><th>queue</th><th>name</th><th>result</th><th>max_mb</th><th>max_vcores</th><th>time</th></tr></thead><tbody>'];
