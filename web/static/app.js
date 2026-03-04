@@ -4,6 +4,18 @@ async function getJSON(url) {
   return r.json();
 }
 
+async function getJSONWithFallback(urls) {
+  let lastError = null;
+  for (const url of urls) {
+    try {
+      return await getJSON(url);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error('no available endpoint');
+}
+
 function escapeHTML(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -51,7 +63,10 @@ function pickTopQueuesFromStats(data, topN) {
 }
 
 async function loadQueueStats() {
-  const data = await getJSON(`/api/dashboard/queue/stats?period=${state.period}`);
+  const data = await getJSONWithFallback([
+    `/api/dashboard/queue/stats?period=${state.period}`,
+    `/api/queue/stats?period=${state.period}`,
+  ]);
   if (!data.length) {
     queueChart.clear();
     return { topQueues: [] };
@@ -107,7 +122,7 @@ async function loadQueueOverview() {
 }
 
 async function loadTodayUsage(preferredTopQueues = []) {
-  const data = await getJSON('/api/dashboard/usage/today');
+  const data = await getJSONWithFallback(['/api/dashboard/usage/today', '/api/today/usage']);
   if (!data.cluster.length) {
     usageChart.clear();
     return data;
@@ -160,7 +175,10 @@ async function loadDailyAppsSummary() {
 }
 
 async function loadQueueAppSummary() {
-  const rows = await getJSON(`/api/dashboard/apps/queue-summary?days=${Math.min(state.days, 30)}&top_n=${Math.max(state.topN, 8)}`);
+  const rows = await getJSONWithFallback([
+    `/api/dashboard/apps/queue-summary?days=${Math.min(state.days, 30)}&top_n=${Math.max(state.topN, 8)}`,
+    '/api/apps/by-queue',
+  ]);
   if (!rows.length) return showEmpty('queueAppSummary', '当前窗口无队列任务汇总数据');
 
   const html = ['<table><thead><tr><th>queue</th><th>total</th><th>success_rate</th><th>failed</th><th>running</th><th>avg_mb</th><th>p95_mb</th></tr></thead><tbody>'];
@@ -191,7 +209,7 @@ function renderSummaryCards(todayUsage, dailySummary, queueOverviewRows) {
 }
 
 async function loadApps() {
-  const rows = await getJSON('/api/dashboard/apps/recent');
+  const rows = await getJSONWithFallback(['/api/dashboard/apps/recent', '/api/apps/by-queue']);
   if (!rows.length) return showEmpty('appTable', '暂无任务明细数据');
 
   const html = ['<table><thead><tr><th>app_id</th><th>queue</th><th>name</th><th>result</th><th>max_mb</th><th>max_vcores</th><th>time</th></tr></thead><tbody>'];
