@@ -10,17 +10,25 @@
 <body>
   <header><h1>YARN 资源使用看板</h1></header>
   <main class="grid">
+    <section class="card full">
+      <h2>今日概览</h2>
+      <div id="summaryCards" class="summary-grid"></div>
+    </section>
     <section class="card">
-      <h2>队列统计（日/周最大最小P95）</h2>
+      <h2>队列峰值趋势（日/周）</h2>
       <div class="toolbar"><button data-period="day">按天</button><button data-period="week">按周</button></div>
       <div id="queueStats" class="chart"></div>
     </section>
     <section class="card">
-      <h2>当日集群/队列资源曲线</h2>
+      <h2>当日集群/重点队列资源曲线</h2>
       <div id="todayUsage" class="chart"></div>
     </section>
     <section class="card full">
-      <h2>任务资源与结果（按队列）</h2>
+      <h2>每日任务量与资源（近14天）</h2>
+      <div id="dailyApps" class="chart"></div>
+    </section>
+    <section class="card full">
+      <h2>任务明细（最近 200 条）</h2>
       <div id="appTable"></div>
     </section>
   </main>

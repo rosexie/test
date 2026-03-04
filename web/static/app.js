@@ -4,24 +4,56 @@ async function getJSON(url) {
   return r.json();
 }
 
+function escapeHTML(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function toGB(mb) {
+  return `${(Number(mb || 0) / 1024).toFixed(1)} GB`;
+}
+
+function normalizeResultTag(tag) {
+  return ['success', 'failed', 'running'].includes(tag) ? tag : 'running';
+}
+
 const queueChart = echarts.init(document.getElementById('queueStats'));
 const usageChart = echarts.init(document.getElementById('todayUsage'));
+const dailyAppsChart = echarts.init(document.getElementById('dailyApps'));
 
 async function loadQueueStats(period = 'day') {
   const data = await getJSON(`/api/queue/stats?period=${period}`);
   const buckets = [...new Set(data.map(d => d.bucket_time.slice(0, 10)))];
+  const topQueues = Object.entries(
+    data.reduce((acc, row) => {
+      acc[row.queue_path] = Math.max(acc[row.queue_path] || 0, row.max_used_memory_mb || 0);
+      return acc;
+    }, {})
+  )
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([queue]) => queue);
+
   const queueByBucket = {};
+  topQueues.forEach(queue => {
+    queueByBucket[queue] = Array(buckets.length).fill(0);
+  });
+
   data.forEach(d => {
-    const key = `${d.queue_path}#max`;
-    queueByBucket[key] = queueByBucket[key] || Array(buckets.length).fill(0);
-    queueByBucket[key][buckets.indexOf(d.bucket_time.slice(0, 10))] = d.max_used_memory_mb;
+    if (!queueByBucket[d.queue_path]) return;
+    const idx = buckets.indexOf(d.bucket_time.slice(0, 10));
+    queueByBucket[d.queue_path][idx] = d.max_used_memory_mb;
   });
 
   queueChart.setOption({
     tooltip: { trigger: 'axis' },
     legend: { type: 'scroll' },
     xAxis: { type: 'category', data: buckets },
-    yAxis: { type: 'value', name: 'MB' },
+    yAxis: { type: 'value', name: '队列峰值内存(MB)' },
     series: Object.entries(queueByBucket).map(([name, values]) => ({ type: 'bar', name, data: values })),
   });
 }
@@ -29,11 +61,15 @@ async function loadQueueStats(period = 'day') {
 async function loadTodayUsage() {
   const data = await getJSON('/api/today/usage');
   const x = data.cluster.map(d => d.ts.slice(11));
+  const queueTotals = Object.entries(data.queues).map(([queue, points]) => [queue, points.reduce((sum, p) => sum + (p.used_memory_mb || 0), 0)]);
+  const topQueues = queueTotals.sort((a, b) => b[1] - a[1]).slice(0, 6).map(([queue]) => queue);
+
   const series = [
-    { name: 'cluster_allocated_mb', type: 'line', smooth: true, data: data.cluster.map(d => d.allocated_mb) }
+    { name: '集群已分配MB', type: 'line', smooth: true, lineStyle: { width: 3 }, data: data.cluster.map(d => d.allocated_mb) },
   ];
-  Object.entries(data.queues).slice(0, 8).forEach(([queue, points]) => {
-    series.push({ name: queue, type: 'line', smooth: true, data: points.map(p => p.used_memory_mb) });
+
+  topQueues.forEach(queue => {
+    series.push({ name: queue, type: 'line', smooth: true, data: (data.queues[queue] || []).map(p => p.used_memory_mb) });
   });
 
   usageChart.setOption({
@@ -43,13 +79,65 @@ async function loadTodayUsage() {
     yAxis: { type: 'value', name: 'MB' },
     series,
   });
+
+  return data;
+}
+
+async function loadDailyAppsSummary() {
+  const data = await getJSON('/api/apps/daily-summary?days=14');
+  const days = data.map(d => d.bucket_day.slice(0, 10));
+
+  dailyAppsChart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { type: 'scroll' },
+    xAxis: [{ type: 'category', data: days }],
+    yAxis: [{ type: 'value', name: '任务数' }, { type: 'value', name: '资源 MB' }],
+    series: [
+      { name: 'success', type: 'bar', stack: 'count', data: data.map(d => d.success_apps) },
+      { name: 'failed', type: 'bar', stack: 'count', data: data.map(d => d.failed_apps) },
+      { name: 'running', type: 'bar', stack: 'count', data: data.map(d => d.running_apps) },
+      { name: 'P95 max_allocated_mb', type: 'line', yAxisIndex: 1, smooth: true, data: data.map(d => d.p95_max_allocated_mb) },
+    ],
+  });
+
+  return data;
+}
+
+function renderSummaryCards(todayUsage, dailySummary) {
+  const latestCluster = todayUsage.cluster[todayUsage.cluster.length - 1];
+  const latestDaily = dailySummary[dailySummary.length - 1] || {
+    total_apps: 0,
+    success_apps: 0,
+    failed_apps: 0,
+    running_apps: 0,
+    p95_max_allocated_mb: 0,
+  };
+
+  const cards = [
+    { label: '当前集群已分配', value: latestCluster ? toGB(latestCluster.allocated_mb) : '0 GB' },
+    { label: '今日任务总数', value: String(latestDaily.total_apps || 0) },
+    { label: '今日成功任务', value: String(latestDaily.success_apps || 0) },
+    { label: '今日失败任务', value: String(latestDaily.failed_apps || 0) },
+    { label: '今日运行中任务', value: String(latestDaily.running_apps || 0) },
+    { label: '任务P95峰值内存', value: toGB(latestDaily.p95_max_allocated_mb) },
+  ];
+
+  document.getElementById('summaryCards').innerHTML = cards
+    .map(c => `<div class="summary-item"><div class="label">${escapeHTML(c.label)}</div><div class="value">${escapeHTML(c.value)}</div></div>`)
+    .join('');
 }
 
 async function loadApps() {
   const apps = await getJSON('/api/apps/by-queue');
   const table = [`<table><thead><tr><th>app_id</th><th>queue</th><th>name</th><th>result</th><th>max_mb</th><th>max_vcores</th><th>time</th></tr></thead><tbody>`];
   apps.slice(0, 200).forEach(a => {
-    table.push(`<tr><td>${a.app_id}</td><td>${a.queue_name || ''}</td><td>${a.app_name || ''}</td><td class="tag-${a.result_tag}">${a.result_tag}</td><td>${a.max_allocated_mb}</td><td>${a.max_allocated_vcores}</td><td>${a.start_time || ''}</td></tr>`);
+    const appId = escapeHTML(a.app_id);
+    const queueName = escapeHTML(a.queue_name);
+    const appName = escapeHTML(a.app_name);
+    const resultTag = normalizeResultTag(a.result_tag);
+    const resultLabel = escapeHTML(a.result_tag);
+    const startTime = escapeHTML(a.start_time);
+    table.push(`<tr><td>${appId}</td><td>${queueName}</td><td>${appName}</td><td class="tag-${resultTag}">${resultLabel}</td><td>${a.max_allocated_mb}</td><td>${a.max_allocated_vcores}</td><td>${startTime}</td></tr>`);
   });
   table.push('</tbody></table>');
   document.getElementById('appTable').innerHTML = table.join('');
@@ -59,5 +147,13 @@ document.querySelectorAll('[data-period]').forEach(btn => {
   btn.addEventListener('click', () => loadQueueStats(btn.dataset.period));
 });
 
-Promise.all([loadQueueStats(), loadTodayUsage(), loadApps()]);
-window.addEventListener('resize', () => { queueChart.resize(); usageChart.resize(); });
+Promise.all([loadQueueStats(), loadTodayUsage(), loadDailyAppsSummary(), loadApps()])
+  .then(([, todayUsage, dailySummary]) => {
+    renderSummaryCards(todayUsage, dailySummary);
+  });
+
+window.addEventListener('resize', () => {
+  queueChart.resize();
+  usageChart.resize();
+  dailyAppsChart.resize();
+});

@@ -90,6 +90,37 @@ def today_usage() -> Dict[str, Any]:
     return {"cluster": cluster, "queues": queue_series}
 
 
+@app.get("/api/apps/daily-summary")
+def apps_daily_summary(days: int = Query(14, ge=3, le=90)) -> List[Dict[str, Any]]:
+    sql = """
+    SELECT TRUNC(FIRST_SEEN_TIME) AS bucket_day,
+           COUNT(*) AS total_apps,
+           SUM(CASE WHEN RESULT_TAG = 'success' THEN 1 ELSE 0 END) AS success_apps,
+           SUM(CASE WHEN RESULT_TAG = 'failed' THEN 1 ELSE 0 END) AS failed_apps,
+           SUM(CASE WHEN RESULT_TAG = 'running' THEN 1 ELSE 0 END) AS running_apps,
+           AVG(MAX_ALLOCATED_MB) AS avg_max_allocated_mb,
+           PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY MAX_ALLOCATED_MB) AS p95_max_allocated_mb
+      FROM YARN_APP_LIFECYCLE
+     WHERE FIRST_SEEN_TIME >= TRUNC(SYSDATE) - :days
+     GROUP BY TRUNC(FIRST_SEEN_TIME)
+     ORDER BY bucket_day
+    """
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, {"days": days})
+        return [
+            {
+                "bucket_day": r[0].isoformat(),
+                "total_apps": int(r[1] or 0),
+                "success_apps": int(r[2] or 0),
+                "failed_apps": int(r[3] or 0),
+                "running_apps": int(r[4] or 0),
+                "avg_max_allocated_mb": float(r[5] or 0),
+                "p95_max_allocated_mb": float(r[6] or 0),
+            }
+            for r in cur.fetchall()
+        ]
+
+
 @app.get("/api/apps/by-queue")
 def apps_by_queue(
     queue: str | None = None,
