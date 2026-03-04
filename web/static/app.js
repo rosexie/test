@@ -5,15 +5,15 @@ async function getJSON(url) {
 }
 
 async function getJSONWithFallback(urls) {
-  let lastError = null;
+  const errors = [];
   for (const url of urls) {
     try {
       return await getJSON(url);
     } catch (err) {
-      lastError = err;
+      errors.push(`${url}: ${err.message}`);
     }
   }
-  throw lastError || new Error('no available endpoint');
+  throw new Error(`all endpoints failed -> ${errors.join(' | ')}`);
 }
 
 function escapeHTML(value) {
@@ -52,6 +52,15 @@ const queueChart = echarts.init(document.getElementById('queueStats'));
 const usageChart = echarts.init(document.getElementById('todayUsage'));
 const dailyAppsChart = echarts.init(document.getElementById('dailyApps'));
 const queueOverviewChart = echarts.init(document.getElementById('queueOverview'));
+
+
+function requireKeys(rows, keys, sectionName) {
+  if (!rows.length) return;
+  const missing = keys.filter(k => !(k in rows[0]));
+  if (missing.length) {
+    throw new Error(`${sectionName} 返回字段异常，缺少: ${missing.join(', ')}`);
+  }
+}
 
 function pickTopQueuesFromStats(data, topN) {
   return Object.entries(
@@ -109,6 +118,7 @@ async function loadQueueOverview() {
     queueOverviewChart.clear();
     return [];
   }
+  requireKeys(rows, ['queue_path', 'peak_used_memory_mb', 'p95_used_memory_mb', 'avg_used_memory_mb'], '队列资源总览');
 
   queueOverviewChart.setOption({
     tooltip: { trigger: 'axis' },
@@ -157,8 +167,9 @@ async function loadDailyAppsSummary() {
     dailyAppsChart.clear();
     return rows;
   }
+  requireKeys(rows, ['bucket_day', 'total_apps', 'success_apps', 'failed_apps', 'running_apps', 'p95_max_allocated_mb'], '每日任务趋势');
 
-  const days = rows.map(d => d.bucket_day.slice(0, 10));
+  const days = rows.map(d => String(d.bucket_day || '').slice(0, 10));
   const successRate = rows.map(d => (d.total_apps > 0 ? d.success_apps / d.total_apps : 0));
   dailyAppsChart.setOption({
     tooltip: { trigger: 'axis' },
@@ -186,6 +197,7 @@ async function loadQueueAppSummary() {
     '/api/apps/by-queue',
   ]);
   if (!rows.length) return showEmpty('queueAppSummary', '当前窗口无队列任务汇总数据');
+  requireKeys(rows, ['queue_name', 'total_apps', 'success_apps', 'failed_apps', 'running_apps', 'avg_max_allocated_mb', 'p95_max_allocated_mb'], '队列任务汇总');
 
   const html = ['<table><thead><tr><th>queue</th><th>total</th><th>success_rate</th><th>failed</th><th>running</th><th>avg_mb</th><th>p95_mb</th></tr></thead><tbody>'];
   rows.forEach(r => {
@@ -217,6 +229,7 @@ function renderSummaryCards(todayUsage, dailySummary, queueOverviewRows) {
 async function loadApps() {
   const rows = await getJSONWithFallback(['/api/dashboard/apps/recent', '/api/apps/recent']);
   if (!rows.length) return showEmpty('appTable', '暂无任务明细数据');
+  requireKeys(rows, ['app_id', 'queue_name', 'app_name', 'result_tag', 'max_allocated_mb', 'max_allocated_vcores', 'start_time'], '任务明细');
 
   const html = ['<table><thead><tr><th>app_id</th><th>queue</th><th>name</th><th>result</th><th>max_mb</th><th>max_vcores</th><th>time</th></tr></thead><tbody>'];
   rows.slice(0, 200).forEach(a => {

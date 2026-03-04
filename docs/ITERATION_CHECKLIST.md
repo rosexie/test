@@ -16,6 +16,7 @@ python scripts/verify_dashboard.py --base-url http://127.0.0.1:8000
 - `GET /api/dashboard/queue/overview` returns non-empty rows with `peak/p95/avg` keys.
 - `GET /api/dashboard/apps/daily-summary` returns non-empty rows for daily app metrics.
 - `GET /api/dashboard/apps/queue-summary` returns non-empty queue summary rows.
+- `GET /api/dashboard/apps/recent` returns non-empty app detail rows with `app_id` / `app_name` / `queue_name`.
 - `GET /` includes panel containers (`queueOverview`, `dailyApps`, `queueAppSummary`) and refresh button.
 - `/static/app.js` binds `refreshBtn` to `refreshDashboard`.
 

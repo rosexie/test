@@ -38,6 +38,7 @@ class DashboardContractTest(unittest.TestCase):
     def test_frontend_has_legacy_fallback_api(self):
         content = Path('web/static/app.js').read_text(encoding='utf-8')
         self.assertIn('getJSONWithFallback', content)
+        self.assertIn('requireKeys', content)
         self.assertIn('/api/queue/stats', content)
         self.assertIn('/api/queue/overview', content)
         self.assertIn('/api/today/usage', content)

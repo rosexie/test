@@ -82,6 +82,11 @@ def verify(base_url: str, timeout: float) -> None:
     queue_summary = ensure_non_empty_list(queue_summary, "/api/dashboard/apps/queue-summary")
     ensure_keys(queue_summary[0], ["queue_name", "total_apps", "success_apps", "p95_max_allocated_mb"], "queue summary")
 
+
+    recent = fetch_json(base_url, "/api/dashboard/apps/recent", timeout)
+    recent = ensure_non_empty_list(recent, "/api/dashboard/apps/recent")
+    ensure_keys(recent[0], ["app_id", "queue_name", "app_name", "result_tag", "max_allocated_mb", "start_time"], "apps recent")
+
     # 4) 刷新看板按钮 wiring + 页面元素存在
     html = fetch_text(base_url, "/", timeout)
     required_tokens = [
