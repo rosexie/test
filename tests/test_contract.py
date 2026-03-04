@@ -37,7 +37,7 @@ class DashboardContractTest(unittest.TestCase):
 
     def test_frontend_has_legacy_fallback_api(self):
         content = Path('web/static/app.js').read_text(encoding='utf-8')
-        self.assertIn('getJSONWithFallback', content)
+        self.assertIn('getRowsWithFallback', content)
         self.assertIn('requireKeys', content)
         self.assertIn('/api/queue/stats', content)
         self.assertIn('/api/queue/overview', content)
@@ -47,6 +47,7 @@ class DashboardContractTest(unittest.TestCase):
         self.assertIn('/api/apps/recent', content)
         self.assertIn("getElementById('refreshBtn').addEventListener('click', refreshDashboard)", content)
         self.assertIn('Promise.allSettled', content)
+        self.assertIn('refreshStatus', content)
 
 
 if __name__ == '__main__':
