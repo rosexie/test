@@ -15,6 +15,13 @@ uvicorn web.app:app --host 0.0.0.0 --port 8000
 python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
+### 4. 看板端到端验收（建议每次迭代执行）
+```bash
+python scripts/verify_dashboard.py --base-url http://127.0.0.1:8000
+```
+
+> 详细清单见 `docs/ITERATION_CHECKLIST.md`，覆盖 3 个关键看板面板和刷新按钮校验。
+
 ## 页面与接口结构（可扩展）
 - 页面元数据：`GET /api/meta/pages`
 - 看板接口统一挂在：`/api/dashboard/*`
