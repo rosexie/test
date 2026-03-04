@@ -10,6 +10,23 @@ python yarn_collector.py
 uvicorn web.app:app --host 0.0.0.0 --port 8000
 ```
 
+### 3. 测试
+```bash
+python -m unittest discover -s tests -p 'test_*.py' -v
+```
+
+## 页面与接口结构（可扩展）
+- 页面元数据：`GET /api/meta/pages`
+- 看板接口统一挂在：`/api/dashboard/*`
+  - `GET /api/dashboard/queue/stats`
+  - `GET /api/dashboard/queue/overview`
+  - `GET /api/dashboard/usage/today`
+  - `GET /api/dashboard/apps/daily-summary`
+  - `GET /api/dashboard/apps/queue-summary`
+  - `GET /api/dashboard/apps/recent`
+
+> 后续新增页面时，优先在 `web/pages.py` 注册页面，再按页面域在 `web/api/` 下新增 router。
+
 ### 环境变量
 - `YARN_BASE_URL`
 - `SOCKS5_PROXY`

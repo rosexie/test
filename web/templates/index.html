@@ -8,8 +8,12 @@
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 </head>
 <body>
-  <header><h1>YARN 资源使用看板</h1></header>
-  <main class="grid">
+  <header>
+    <h1>YARN 资源与任务看板</h1>
+    <div id="pageNav" class="page-nav"></div>
+  </header>
+
+  <main class="grid" data-page-section="dashboard">
     <section class="card full">
       <h2>分析参数</h2>
       <div class="filter-row">
@@ -38,42 +42,22 @@
       </div>
     </section>
 
+    <section class="card full"><h2>今日概览</h2><div id="summaryCards" class="summary-grid"></div></section>
+    <section class="card"><h2>队列趋势（选中指标）</h2><div class="toolbar"><button data-period="day">按天</button><button data-period="week">按周</button></div><div id="queueStats" class="chart"></div></section>
+    <section class="card"><h2>队列资源总览（Peak/P95/Avg）</h2><div id="queueOverview" class="chart"></div></section>
+    <section class="card full"><h2>当日集群与重点队列资源曲线</h2><div id="todayUsage" class="chart"></div></section>
+    <section class="card full"><h2>每日任务量 / 成功率 / P95资源</h2><div id="dailyApps" class="chart"></div></section>
+    <section class="card full"><h2>队列任务汇总（窗口内）</h2><div id="queueAppSummary"></div></section>
+    <section class="card full"><h2>任务明细（最近200条）</h2><div id="appTable"></div></section>
+  </main>
+
+  <main class="grid" data-page-section="capacity-planning" style="display:none">
     <section class="card full">
-      <h2>今日概览</h2>
-      <div id="summaryCards" class="summary-grid"></div>
-    </section>
-
-    <section class="card">
-      <h2>队列趋势（按选择指标）</h2>
-      <div class="toolbar"><button data-period="day">按天</button><button data-period="week">按周</button></div>
-      <div id="queueStats" class="chart"></div>
-    </section>
-
-    <section class="card">
-      <h2>队列资源总览（Top 队列）</h2>
-      <div id="queueOverview" class="chart"></div>
-    </section>
-
-    <section class="card full">
-      <h2>当日集群与重点队列资源曲线</h2>
-      <div id="todayUsage" class="chart"></div>
-    </section>
-
-    <section class="card full">
-      <h2>每日任务量 + 成功率 + 资源（趋势）</h2>
-      <div id="dailyApps" class="chart"></div>
-    </section>
-
-    <section class="card full">
-      <h2>按队列任务汇总（近窗口）</h2>
-      <div id="queueAppSummary"></div>
-    </section>
-
-    <section class="card full">
-      <h2>任务明细（最近 200 条）</h2>
-      <div id="appTable"></div>
+      <h2>容量规划（预留页）</h2>
+      <p>该页面为后续扩展位：可添加预测模型、阈值配置、告警规则和成本分析等模块。</p>
     </section>
   </main>
+
   <script src="/static/app.js"></script>
 </body>
 </html>
