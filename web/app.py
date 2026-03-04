@@ -59,6 +59,41 @@ def queue_stats(period: str = Query("day", pattern="^(day|week)$")) -> List[Dict
         ]
 
 
+@app.get("/api/queue/overview")
+def queue_overview(
+    period: str = Query("day", pattern="^(day|week)$"),
+    top_n: int = Query(8, ge=3, le=20),
+) -> List[Dict[str, Any]]:
+    lookback_days = 7 if period == "day" else 56
+    sql = """
+    SELECT *
+      FROM (
+        SELECT QUEUE_PATH,
+               AVG(USED_MEMORY_MB) AS avg_used_memory_mb,
+               MAX(USED_MEMORY_MB) AS peak_used_memory_mb,
+               PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY USED_MEMORY_MB) AS p95_used_memory_mb,
+               MAX(SNAP_TIME) AS last_snap_time
+          FROM YARN_QUEUE_RESOURCE_SNAP
+         WHERE SNAP_TIME >= TRUNC(SYSDATE) - :lookback_days
+         GROUP BY QUEUE_PATH
+         ORDER BY peak_used_memory_mb DESC
+      )
+     WHERE ROWNUM <= :top_n
+    """
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, {"lookback_days": lookback_days, "top_n": top_n})
+        return [
+            {
+                "queue_path": row[0],
+                "avg_used_memory_mb": float(row[1] or 0),
+                "peak_used_memory_mb": float(row[2] or 0),
+                "p95_used_memory_mb": float(row[3] or 0),
+                "last_snap_time": row[4].isoformat() if row[4] else None,
+            }
+            for row in cur.fetchall()
+        ]
+
+
 @app.get("/api/today/usage")
 def today_usage() -> Dict[str, Any]:
     with get_conn() as conn, conn.cursor() as cur:
@@ -110,6 +145,41 @@ def apps_daily_summary(days: int = Query(14, ge=3, le=90)) -> List[Dict[str, Any
         return [
             {
                 "bucket_day": r[0].isoformat(),
+                "total_apps": int(r[1] or 0),
+                "success_apps": int(r[2] or 0),
+                "failed_apps": int(r[3] or 0),
+                "running_apps": int(r[4] or 0),
+                "avg_max_allocated_mb": float(r[5] or 0),
+                "p95_max_allocated_mb": float(r[6] or 0),
+            }
+            for r in cur.fetchall()
+        ]
+
+
+@app.get("/api/apps/queue-summary")
+def apps_queue_summary(days: int = Query(7, ge=1, le=30), top_n: int = Query(12, ge=5, le=30)) -> List[Dict[str, Any]]:
+    sql = """
+    SELECT *
+      FROM (
+        SELECT NVL(QUEUE_NAME, '(unknown)') AS queue_name,
+               COUNT(*) AS total_apps,
+               SUM(CASE WHEN RESULT_TAG = 'success' THEN 1 ELSE 0 END) AS success_apps,
+               SUM(CASE WHEN RESULT_TAG = 'failed' THEN 1 ELSE 0 END) AS failed_apps,
+               SUM(CASE WHEN RESULT_TAG = 'running' THEN 1 ELSE 0 END) AS running_apps,
+               AVG(MAX_ALLOCATED_MB) AS avg_max_allocated_mb,
+               PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY MAX_ALLOCATED_MB) AS p95_max_allocated_mb
+          FROM YARN_APP_LIFECYCLE
+         WHERE FIRST_SEEN_TIME >= TRUNC(SYSDATE) - :days
+         GROUP BY NVL(QUEUE_NAME, '(unknown)')
+         ORDER BY total_apps DESC
+      )
+     WHERE ROWNUM <= :top_n
+    """
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, {"days": days, "top_n": top_n})
+        return [
+            {
+                "queue_name": r[0],
                 "total_apps": int(r[1] or 0),
                 "success_apps": int(r[2] or 0),
                 "failed_apps": int(r[3] or 0),

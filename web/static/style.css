@@ -6,11 +6,14 @@ header { padding: 12px 18px; background: #1f4b99; color: #fff; }
 .card.full { grid-column: 1 / -1; }
 .chart { height: 360px; }
 .toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
-button { border: 1px solid #ccc; background: #fff; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
-.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #555; }
+select, button { border: 1px solid #ccc; background: #fff; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+button.primary { background: #1f4b99; color: #fff; border-color: #1f4b99; }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
 .summary-item { border: 1px solid #e0e6ef; border-radius: 8px; padding: 10px; background: #fafcff; }
 .summary-item .label { color: #666; font-size: 12px; margin-bottom: 4px; }
-.summary-item .value { font-size: 22px; font-weight: 700; color: #1f4b99; }
+.summary-item .value { font-size: 18px; font-weight: 700; color: #1f4b99; word-break: break-word; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
 .tag-success { color: #117733; font-weight: 700; }
