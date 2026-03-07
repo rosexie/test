@@ -50,5 +50,11 @@ class DashboardContractTest(unittest.TestCase):
         self.assertIn('refreshStatus', content)
 
 
+    def test_mock_verifier_script_exists(self):
+        content = Path('scripts/verify_dashboard_with_mock.py').read_text(encoding='utf-8')
+        self.assertIn('verify(base_url', content)
+        self.assertIn('/api/dashboard/apps/queue-summary', content)
+
+
 if __name__ == '__main__':
     unittest.main()

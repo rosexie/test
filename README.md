@@ -50,3 +50,8 @@ python scripts/verify_dashboard.py --base-url http://127.0.0.1:8000
 - `ORACLE_DSN`
 - `COLLECT_INTERVAL_SECONDS`
 - `APP_HEARTBEAT_PERSIST_SECONDS`（默认300秒，控制长跑任务状态的最小持久化间隔，降低频繁更新）
+
+### 5. 无真实环境时的模拟接口验收
+```bash
+python scripts/verify_dashboard_with_mock.py
+```

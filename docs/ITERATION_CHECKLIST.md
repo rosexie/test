@@ -10,6 +10,8 @@ uvicorn web.app:app --host 0.0.0.0 --port 8000
 python -m unittest discover -s tests -p 'test_*.py' -v
 node --check web/static/app.js
 python scripts/verify_dashboard.py --base-url http://127.0.0.1:8000
+# 如果没有可连通的真实环境，至少执行一次模拟接口验收
+python scripts/verify_dashboard_with_mock.py
 ```
 
 ### 2) What `verify_dashboard.py` validates

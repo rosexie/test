@@ -20,12 +20,33 @@ class CheckFailed(Exception):
     pass
 
 
-def fetch_json(base_url: str, path: str, timeout: float) -> Any:
+def _normalize_key(key: str) -> str:
+    return str(key or '').strip().lower()
+
+
+def _normalize_row_keys(row: Any) -> Any:
+    if not isinstance(row, dict):
+        return row
+    return {_normalize_key(k): v for k, v in row.items()}
+
+
+def _extract_rows(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [_normalize_row_keys(x) for x in payload if isinstance(x, dict)]
+    if isinstance(payload, dict):
+        for key in ('rows', 'items', 'data', 'result'):
+            if isinstance(payload.get(key), list):
+                return [_normalize_row_keys(x) for x in payload[key] if isinstance(x, dict)]
+    return []
+
+
+def fetch_json(base_url: str, path: str, timeout: float) -> list[dict[str, Any]]:
     url = urllib.parse.urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            payload = json.loads(resp.read().decode("utf-8"))
+            return _extract_rows(payload)
     except urllib.error.HTTPError as exc:
         raise CheckFailed(f"{path} returned HTTP {exc.code}") from exc
     except urllib.error.URLError as exc:
