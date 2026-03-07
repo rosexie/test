@@ -1,0 +1,60 @@
+import unittest
+from pathlib import Path
+
+from web.pages import PAGES
+
+
+class DashboardContractTest(unittest.TestCase):
+    def test_pages_registry_is_extensible(self):
+        keys = {p['key'] for p in PAGES}
+        self.assertIn('dashboard', keys)
+        self.assertIn('capacity-planning', keys)
+
+    def test_dashboard_router_contract(self):
+        content = Path('web/api/dashboard.py').read_text(encoding='utf-8')
+        self.assertIn('APIRouter(prefix="/api/dashboard"', content)
+        for path in [
+            '/queue/stats',
+            '/queue/overview',
+            '/usage/today',
+            '/apps/daily-summary',
+            '/apps/queue-summary',
+            '/apps/recent',
+        ]:
+            self.assertIn(f'@router.get("{path}")', content)
+
+    def test_legacy_router_contract(self):
+        content = Path('web/api/dashboard.py').read_text(encoding='utf-8')
+        self.assertIn('APIRouter(prefix="/api"', content)
+        for path in ['/queue/stats', '/queue/overview', '/today/usage', '/apps/daily-summary', '/apps/by-queue', '/apps/recent']:
+            self.assertIn(f'@legacy_router.get("{path}")', content)
+
+    def test_frontend_uses_namespaced_api(self):
+        content = Path('web/static/app.js').read_text(encoding='utf-8')
+        self.assertIn('/api/dashboard/queue/stats', content)
+        self.assertIn('/api/meta/pages', content)
+        self.assertIn('showEmpty', content)
+
+    def test_frontend_has_legacy_fallback_api(self):
+        content = Path('web/static/app.js').read_text(encoding='utf-8')
+        self.assertIn('getRowsWithFallback', content)
+        self.assertIn('requireKeys', content)
+        self.assertIn('/api/queue/stats', content)
+        self.assertIn('/api/queue/overview', content)
+        self.assertIn('/api/today/usage', content)
+        self.assertIn('/api/apps/daily-summary', content)
+        self.assertIn('/api/apps/by-queue', content)
+        self.assertIn('/api/apps/recent', content)
+        self.assertIn("getElementById('refreshBtn').addEventListener('click', refreshDashboard)", content)
+        self.assertIn('Promise.allSettled', content)
+        self.assertIn('refreshStatus', content)
+
+
+    def test_mock_verifier_script_exists(self):
+        content = Path('scripts/verify_dashboard_with_mock.py').read_text(encoding='utf-8')
+        self.assertIn('verify(base_url', content)
+        self.assertIn('/api/dashboard/apps/queue-summary', content)
+
+
+if __name__ == '__main__':
+    unittest.main()
