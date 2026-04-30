@@ -1,209 +1,142 @@
 # 同步任务元数据管理平台实施方案
 
-## 1. 目标
+## 1. 项目背景
 
-建设一个同步任务元数据管理平台，用于统一管理 Oracle OGG -> Kafka -> Spark Streaming -> Hive/HBase/Kafka 等实时同步任务。
+当前实时同步链路为：
 
-平台核心目标不是替代 Airflow，也不是替代 Spark Streaming，而是补齐任务资产、配置、发布、运行监控、回滚、补数和治理闭环。
+```text
+Oracle -> OGG -> Kafka -> Spark Streaming -> Hive / HBase / Kafka / 其他目标
+```
 
-## 2. 职责边界
+现状问题：
 
-### 元数据平台负责
+- 同步任务配置分散在手工配置、Airflow 参数、旧配置文件、Oracle 维表和 Spark 定制类中。
+- 管理侧无法清楚知道同步了哪些数据、同步到哪里、谁负责、当前是否运行正常。
+- 缺少统一的发布版本、回滚、补数、Kafka lag、错误和字段质量观测。
+
+目标是建设一个“同步任务元数据管理平台”，将同步任务抽象成可管理、可发布、可观测、可追溯的数据资产。
+
+## 2. 平台职责边界
+
+平台负责：
 
 - 同步任务定义
 - 字段映射
 - 目标端配置
-- 标准任务与定制任务区分
-- 发布版本管理
+- 处理策略
+- 发布版本
 - SyncMetadata snapshot 生成
-- 发布前校验
 - Airflow 触发
 - 运行状态展示
-- Kafka lag、offset、错误、字段质量展示
+- Kafka lag 展示
+- 错误记录和字段质量
 - 回滚和补数入口
+- 现有任务导入
 
-### Airflow 负责
+Airflow 负责：
 
-- 任务编排
-- spark-submit
-- 重启、停止、补数触发
+- Spark Streaming 任务提交
+- 任务重启、停止、补数 DAG 编排
 - DAG Run 记录
-- 基础失败重试和告警
 
-### Spark Streaming 负责
+Spark Streaming 负责：
 
 - 消费 Kafka
-- 解析 OGG 消息
-- 执行业务处理逻辑
-- 写 Hive/HBase/Kafka 等目标端
-- 回写 batch、offset、错误、字段质量和运行状态
+- 解析数据
+- 写入 Hive / HBase / Kafka 等目标
+- 上报 batch、offset、错误、字段质量指标
 
-## 3. 总体架构
+## 3. MVP 总体链路
 
 ```text
-同步任务管理平台
-  -> 元数据表
-  -> Snapshot 生成
-  -> Airflow API
-  -> Runtime 查询
-
-Airflow
-  -> streaming_sync_submit DAG
+创建任务元数据
+  -> 配置字段映射和目标端
+  -> validate
+  -> generate snapshot
+  -> create release
+  -> trigger Airflow DAG
   -> spark-submit
-
-Spark Streaming
-  -> 读取 syncMetadataPath
-  -> 处理 Kafka 数据
-  -> 写目标端
-  -> 回写运行指标
+  -> Spark 从 snapshot 启动
+  -> 运行状态回写
+  -> 页面展示 runtime / lag / error / quality
 ```
 
 ## 4. 核心数据模型
 
-MVP 阶段至少包含以下表：
+MVP 需要建立以下表：
 
 - SYNC_TASK：同步任务主表
 - SYNC_FIELD_MAPPING：字段映射
 - SYNC_TARGET_CONFIG：目标端配置
 - SYNC_STRATEGY：处理策略
-- SYNC_RELEASE：发布版本与 snapshot
+- SYNC_RELEASE：发布版本和 snapshot
 - SYNC_JOB_INSTANCE：运行实例
-- SYNC_TASK_RUNTIME：任务当前运行状态
+- SYNC_TASK_RUNTIME：任务运行状态汇总
 - SYNC_MONITOR_EVENT：阶段事件流水
-- SYNC_FIELD_QUALITY：字段质量
-- SYNC_ERROR_RECORD：错误记录
+- SYNC_FIELD_QUALITY：字段质量统计
+- SYNC_ERROR_RECORD：错误明细
 
-## 5. 任务类型
+### 4.1 SYNC_TASK
 
-### standard 标准任务
+关键字段：
 
-适用于：
+- taskId
+- taskName
+- sourceSystem
+- sourceDb
+- sourceSchema
+- sourceTable
+- sourceTopic
+- targetType
+- targetCluster
+- targetDb
+- targetTable
+- consumerGroup
+- parserType
+- taskMode: standard/custom
+- taskCategory: realtime/batch_complement/kafka_replay
+- owner
+- department
+- slaLevel
+- status
+- currentVersion
 
-- 单 topic 输入
-- 单目标输出
-- 字段映射为主
-- 简单 rowkey
-- 简单 Hive partition
-- 无复杂 join
-- 无复杂业务状态处理
-
-这类任务应支持页面化配置、自动校验、自动生成 snapshot、自动发布。
-
-### custom 定制任务
-
-适用于：
-
-- 多 topic 合并
-- 复杂 merge
-- 需要查 HBase/Redis/DB 补充数据
-- 复杂过滤和状态判断
-- 回抛 Kafka
-- 多目标写入
-
-这类任务不强行低代码化。平台只管理元数据、customClass、jarVersion/gitCommitId、发布版本、运行状态和负责人。
-
-## 6. Snapshot 原则
-
-发布时生成不可变 SyncMetadata snapshot。
-
-推荐路径：
-
-```text
-hdfs:///sync-metadata/{taskName}/{version}/sync_metadata.conf
-```
+### 4.2 SYNC_RELEASE
 
 关键规则：
 
 - draft 可以修改。
 - published release 不可修改。
-- active/currentVersion 只指向某个 release。
-- 回滚不是修改旧版本，而是把 currentVersion 切回历史 release。
-- Spark Streaming 运行时只读取 snapshot，不直接读取 draft 表。
+- 每次发布生成不可变 snapshot。
+- 回滚只能切换 currentVersion，不能修改历史 snapshot。
 
-## 7. 发布流程
+关键字段：
 
-```text
-创建/修改任务
-  -> 保存 draft
-  -> validate
-  -> generate snapshot
-  -> create release
-  -> trigger Airflow DAG
-  -> create SYNC_JOB_INSTANCE
-  -> update task currentVersion/status
-  -> Spark Streaming 启动
-  -> runtime/monitor 回写
-```
+- releaseId
+- taskId
+- version
+- releaseStatus
+- snapshotPath
+- snapshotJson
+- validationResult
+- airflowDagId
+- airflowRunId
+- jarVersion
+- gitCommitId
+- createdBy / approvedBy / publishedBy
 
-## 8. Airflow 集成
+### 4.3 SYNC_TASK_RUNTIME
 
-第一阶段使用一个通用 DAG：
+用于页面快速查询任务健康状态。
 
-```text
-airflow/dags/streaming_sync_submit.py
-```
+关键字段：
 
-DAG 通过 dag_run.conf 接收参数：
-
-```json
-{
-  "taskName": "R_WIP_LOG_T_TO_HIVE",
-  "version": "20260430_001",
-  "snapshotPath": "hdfs:///sync-metadata/R_WIP_LOG_T_TO_HIVE/20260430_001/sync_metadata.conf",
-  "runType": "realtime",
-  "jarPath": "hdfs:///jars/streaming-parser.jar",
-  "mainClass": "com.foxconn.streaming.parser",
-  "sparkQueue": "default",
-  "executorMemory": "4g",
-  "executorCores": 2,
-  "numExecutors": 4
-}
-```
-
-DAG 顶层不要查询业务数据库。所有运行参数从 dag_run.conf 传入。
-
-## 9. Spark Streaming 启动改造
-
-新增启动参数：
-
-```text
---syncMetadataPath
---syncTaskName
---syncVersion
---runType
---validateOnly
-```
-
-新启动方式：
-
-```bash
-spark-submit \
-  --class com.foxconn.streaming.parser \
-  streaming_parser.jar \
-  --syncMetadataPath hdfs:///sync-metadata/R_WIP_LOG_T_TO_HIVE/20260430_001/sync_metadata.conf \
-  --syncTaskName R_WIP_LOG_T_TO_HIVE \
-  --syncVersion 20260430_001 \
-  --runType realtime
-```
-
-兼容原则：
-
-- 如果传入 syncMetadataPath，走 snapshot 模式。
-- 如果没有传入 syncMetadataPath，保持老启动逻辑不变。
-- validateOnly=true 时只校验配置，不创建 StreamingContext。
-
-## 10. 运行监控
-
-每个 batch 至少记录以下阶段：
-
-- kafka_fetch
-- parse_json
-- target_write
-- offset_commit
-
-运行状态汇总写入 SYNC_TASK_RUNTIME，至少包括：
-
+- taskId
+- taskName
+- version
 - status
+- yarnAppId
+- sparkAppId
 - lastBatchTime
 - lastSuccessTime
 - lastFailedTime
@@ -215,59 +148,362 @@ spark-submit \
 - kafkaLag
 - dataDelaySeconds
 - lastErrorMessage
+- updatedTime
 
-监控写入失败不能影响主同步链路，只允许打印 warning 日志。
+## 5. 后端 API
 
-## 11. MVP Issues
+### 5.1 任务台账 API
 
-当前仓库中已拆分以下实施任务：
+```http
+GET    /api/sync/tasks
+GET    /api/sync/tasks/{taskId}
+POST   /api/sync/tasks
+PUT    /api/sync/tasks/{taskId}
+DELETE /api/sync/tasks/{taskId}
+```
 
-- #5 [MVP-1] 建立同步任务元数据表结构与领域模型
-- #6 [MVP-2] 实现任务台账与任务详情基础 API
-- #7 [MVP-3] 实现 SyncMetadata Snapshot 生成与发布前校验
-- #8 [MVP-4] 实现 Airflow 通用 DAG 与平台触发集成
-- #9 [MVP-5] 改造 Spark Streaming 支持从 SyncMetadata Snapshot 启动
-- #10 [MVP-6] 增加运行状态、Kafka Lag、错误与字段质量回写
-- #11 [MVP-7] 实现同步任务台账与任务详情前端页面
-- #12 [MVP-8] 实现发布、回滚、补数操作闭环
-- #14 [MVP-9] 实现现有同步任务导入工具
-- #15 [MVP-10] 补充总体设计、API、Airflow、Spark 启动与端到端验收文档
+查询条件：
 
-## 12. 建议执行顺序
+- taskName
+- sourceTopic
+- sourceTable
+- targetTable
+- owner
+- status
+- taskMode
+- targetType
 
-第一批：
+### 5.2 字段、目标、策略 API
 
-1. MVP-1 元数据模型
-2. MVP-3 Snapshot 生成与校验
-3. MVP-5 Spark Streaming snapshot 启动改造
+```http
+GET /api/sync/tasks/{taskId}/fields
+PUT /api/sync/tasks/{taskId}/fields
 
-第二批：
+GET /api/sync/tasks/{taskId}/target-config
+PUT /api/sync/tasks/{taskId}/target-config
 
-1. MVP-2 基础 API
-2. MVP-4 Airflow 集成
-3. MVP-6 Runtime 回写
+GET /api/sync/tasks/{taskId}/strategy
+PUT /api/sync/tasks/{taskId}/strategy
+```
 
-第三批：
+### 5.3 校验与 Snapshot API
 
-1. MVP-7 前端台账
-2. MVP-8 发布/回滚/补数
-3. MVP-9 旧任务导入
-4. MVP-10 文档完善
+```http
+POST /api/sync/tasks/{taskId}/validate
+POST /api/sync/tasks/{taskId}/snapshot
+GET  /api/sync/tasks/{taskId}/releases
+GET  /api/sync/releases/{releaseId}
+```
 
-## 13. MVP 验收清单
+### 5.4 发布、回滚、补数 API
 
-第一版上线只验收以下能力：
+```http
+POST /api/sync/releases/{releaseId}/publish
+POST /api/sync/tasks/{taskId}/restart
+POST /api/sync/tasks/{taskId}/stop
+POST /api/sync/tasks/{taskId}/rollback
+POST /api/sync/tasks/{taskId}/complement
+```
 
-- 可以导入或创建同步任务。
-- 可以查看任务台账。
-- 可以查看 sourceTopic、targetTable、consumerGroup、owner。
+## 6. Snapshot 设计
+
+发布时生成：
+
+```text
+hdfs:///sync-metadata/{taskName}/{version}/sync_metadata.conf
+```
+
+同时写入：
+
+- SYNC_RELEASE.SNAPSHOT_JSON
+- SYNC_RELEASE.SNAPSHOT_PATH
+
+Snapshot 至少包含：
+
+- taskName
+- version
+- source system/table/topic
+- target type/db/table
+- consumerGroup
+- parserType
+- taskMode
+- strategy/customClass
+- field mappings
+- target config
+- monitor config
+
+## 7. 校验规则
+
+任务级：
+
+- taskName 非空且唯一。
+- sourceTopic 非空。
+- targetType 非空。
+- targetTable 非空。
+- consumerGroup 非空。
+- taskMode 必须为 standard/custom。
+
+字段级：
+
+- sourceField 不重复。
+- targetField 不重复。
+- HBase 任务必须有 rowkey 字段或 rowkeyExpr。
+- Hive 任务如果配置 partition，partition 字段必须存在。
+
+策略级：
+
+- custom 任务必须有 customClass。
+- standard 任务不能强依赖 customClass。
+
+发布级：
+
+- published release 不允许覆盖。
+- 同一个 task 下 version 不可重复。
+
+## 8. Airflow 集成
+
+第一阶段采用一个通用 DAG：
+
+```text
+airflow/dags/streaming_sync_submit.py
+```
+
+DAG 通过 dag_run.conf 接收：
+
+- taskName
+- version
+- snapshotPath
+- runType: realtime/restart/complement/replay
+- jarPath
+- mainClass
+- sparkQueue
+- executorMemory
+- executorCores
+- numExecutors
+- extraSparkConf
+
+DAG 任务建议：
+
+- validate_conf
+- build_spark_submit_command
+- submit_spark_job
+- extract_yarn_app_id
+- callback_platform
+
+关键要求：
+
+- DAG 顶层不要查询业务数据库。
+- 所有运行参数从 dag_run.conf 传入。
+- 发布时创建 SYNC_JOB_INSTANCE。
+- Airflow 调用失败时 release 不能标记为 published/running。
+
+## 9. Spark Streaming 改造
+
+新增启动参数：
+
+```bash
+spark-submit \
+  --class com.foxconn.streaming.parser \
+  streaming_parser.jar \
+  --syncMetadataPath hdfs:///sync-metadata/R_WIP_LOG_T_TO_HIVE/20260430_001/sync_metadata.conf \
+  --syncTaskName R_WIP_LOG_T_TO_HIVE \
+  --syncVersion 20260430_001 \
+  --runType realtime \
+  --validateOnly false
+```
+
+启动逻辑：
+
+1. 如果传入 syncMetadataPath：
+   - 加载 snapshot。
+   - 校验 taskName/version。
+   - 转换为现有 Setting 或等价运行配置。
+   - 进入原有 parser 逻辑。
+2. 如果未传 syncMetadataPath：
+   - 保持现有启动逻辑不变。
+3. validateOnly=true：
+   - 只执行配置校验。
+   - 不创建 StreamingContext。
+
+## 10. 运行监控
+
+监控阶段：
+
+- kafka_fetch
+- parse_json
+- target_write
+- offset_commit
+
+写入对象：
+
+- SYNC_MONITOR_EVENT
+- SYNC_TASK_RUNTIME
+- SYNC_ERROR_RECORD
+- SYNC_FIELD_QUALITY
+
+关键要求：
+
+- 每个 batch 至少写一条 monitor event。
+- batch 成功后更新 runtime。
+- batch 失败后写 error record。
+- offset commit 成功/失败都要记录。
+- 监控写入失败不能影响主同步任务，只能 warning 日志。
+- 增加 enableSyncMonitor 开关，默认开启。
+
+## 11. 前端 MVP
+
+### 11.1 任务列表
+
+字段：
+
+- 任务名
+- 源表
+- 源 topic
+- 目标类型
+- 目标表
+- 任务模式 standard/custom
+- 负责人
+- 当前版本
+- 状态
+- Kafka lag
+- 数据延迟
+- 最近成功时间
+- 最近失败原因
+
+### 11.2 任务详情
+
+Tab：
+
+- 基础信息
+- 字段映射
+- 目标配置
+- 处理策略
+- 发布历史
+- 运行实例
+- Kafka Offset
+- 错误记录
+- 字段质量
+
+## 12. 发布、回滚、补数
+
+### 12.1 发布流程
+
+```text
+draft task
+  -> validate
+  -> generate snapshot
+  -> create release
+  -> trigger Airflow
+  -> create SYNC_JOB_INSTANCE
+  -> update task.currentVersion/status
+```
+
+### 12.2 回滚流程
+
+```text
+select old release
+  -> validate release exists and snapshot available
+  -> update task.currentVersion
+  -> trigger Airflow restart with old snapshot
+  -> create new job instance
+```
+
+### 12.3 补数流程
+
+支持：
+
+- 按时间补数 startTime/endTime
+- 按 Kafka offset 补数 startOffset/endOffset
+- 按 partition 补数
+
+要求：
+
+- 补数任务必须创建独立 SYNC_JOB_INSTANCE。
+- 补数 consumer group 必须和实时 consumer group 隔离。
+- 支持 targetMode=normal/temp。
+
+## 13. 现有任务导入
+
+导入来源：
+
+- 旧 setting.conf 或配置目录
+- sync_metadata_example.conf
+- MERGE_TOPIC_DETAIL
+- MORE_TOPIC_DETAIL
+- Airflow DAG conf
+- 现有 parse/merge/custom class 信息
+
+导入策略：
+
+- 能识别的标准任务导入为 taskMode=standard。
+- 识别不了复杂逻辑的任务导入为 taskMode=custom。
+- custom 任务必须登记 customClass。
+- 导入后 status=draft_imported。
+- 导入任务不自动发布，必须人工确认后才能发布。
+
+## 14. MVP Issue 顺序
+
+建议按以下顺序实施：
+
+1. #5 [MVP-1] 建立同步任务元数据表结构与领域模型
+2. #6 [MVP-2] 实现任务台账与任务详情基础 API
+3. #7 [MVP-3] 实现 SyncMetadata Snapshot 生成与发布前校验
+4. #8 [MVP-4] 实现 Airflow 通用 DAG 与平台触发集成
+5. #9 [MVP-5] 改造 Spark Streaming 支持从 SyncMetadata Snapshot 启动
+6. #10 [MVP-6] 增加运行状态、Kafka Lag、错误与字段质量回写
+7. #11 [MVP-7] 实现同步任务台账与任务详情前端页面
+8. #12 [MVP-8] 实现发布、回滚、补数操作闭环
+9. #13 [MVP-9] 实现现有同步任务导入工具
+10. #16 [MVP-10] 补充端到端测试、部署脚本与运维文档
+
+## 15. MVP 验收清单
+
+第一版上线验收：
+
+- 可以导入 10 个现有同步任务。
+- 可以在页面看到任务台账。
+- 可以查看某个任务的 sourceTopic、targetTable、consumerGroup、owner。
 - 可以维护字段映射。
 - 可以生成 snapshot。
 - 可以 validate snapshot。
-- 可以通过 Airflow 触发 Spark Streaming。
+- 可以通过 Airflow 触发一个 Spark Streaming 任务。
 - Spark Streaming 可以从 syncMetadataPath 启动。
-- 可以查看 runtime 状态。
-- 可以查看 Kafka lag 或最近 offset。
-- 可以查看发布历史。
+- 可以看到任务 runtime 状态。
+- 可以看到 Kafka lag 或最近 offset。
+- 可以看到发布历史。
 - 可以回滚到上一个 release。
-- 可以创建补数任务。
+
+## 16. 非 MVP 范围
+
+第一版暂不做：
+
+- 复杂低代码转换编辑器。
+- 完整字段级血缘图谱。
+- 自动 schema evolution。
+- 复杂审批流。
+- 多租户权限模型。
+- 机器学习异常检测。
+
+## 17. Codex 执行提示
+
+每个 Issue 单独开 PR，避免一次性大改。
+
+优先顺序：
+
+1. 数据模型
+2. API
+3. Snapshot
+4. Airflow
+5. Spark 启动改造
+6. Runtime 监控
+7. 前端
+8. 发布回滚补数
+9. 导入
+10. 文档和 E2E
+
+所有 PR 必须保证：
+
+- 不破坏现有 Spark Streaming 老启动方式。
+- 新功能有单元测试或最小集成测试。
+- 发布后的 snapshot 不可变。
+- 监控写入失败不能影响主同步链路。
